@@ -67,10 +67,10 @@ A web interface to monitor and control server fan speeds, designed specifically 
 -   **POST**: Set manual fan speed.
     
     #### Request Body Example:
-    `{
+    ```{
       "speed": 50,
       "fan_id": 0
-    }`
+    }```
 
 ### `/fan/curve`
 
