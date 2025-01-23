@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { fetcher } from "../api";
-import { Switch } from "@mui/material";
+import { Switch, Box } from "@mui/material";
 const FanSpeedEditor = ({
   fanSpeeds,
   setFanSpeeds,
@@ -114,25 +114,36 @@ const FanSpeedEditor = ({
           </div>
         ))}
       </div>
-      <button
-        onClick={handleFanSpeedUpdate}
-        disabled={isUpdating}
-        className={`bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary-dark mt-4 ${
-          isUpdating ? "opacity-50 cursor-not-allowed" : ""
-        }`}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "space-between",
+        }}
       >
-        {isUpdating ? "Updating..." : "Update Fan Speeds"}
-      </button>
-
-      <button
-        onClick={() => handleUpdateAutoFanSpeed("enable")}
-        disabled={isUpdating}
-        className={`bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary-dark mt-4 ${
-          isUpdating ? "opacity-50 cursor-not-allowed" : ""
-        }`}
-      >
-        Enable Auto Fan Speed
-      </button>
+        <Box>
+          <button
+            onClick={handleFanSpeedUpdate}
+            disabled={isUpdating}
+            className={`bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary-dark mt-4 ${
+              isUpdating ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            {isUpdating ? "Updating..." : "Update Fan Speeds"}
+          </button>
+        </Box>
+        <Box>
+          <button
+            onClick={() => handleUpdateAutoFanSpeed("enable")}
+            disabled={isUpdating}
+            className={`bg-primary text-white px-4 py-2 rounded shadow hover:bg-primary-dark mt-4 ${
+              isUpdating ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            Enable Auto Fan Speed
+          </button>
+        </Box>
+      </Box>
     </div>
   );
 };
