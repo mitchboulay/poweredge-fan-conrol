@@ -1,18 +1,24 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from typing import List
 import os
 import subprocess
 from models import FanSpeedRequest, FanCurveRequest, AutoFanSpeedRequest
 import config
 
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
 app = FastAPI()
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001"],  # React frontend URL
+    allow_origins=[
+        "http://localhost:3001",
+        "http://localhost:3000",
+    ],  # React frontend URL
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
@@ -96,10 +102,9 @@ def parse_fan_speed_output(output: str):
     return {"fans": fan_speeds}
 
 
-# Routes
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Fan Control API"}
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 
 def get_fan_speed():
@@ -230,3 +235,8 @@ def update_fan_curve(request: FanCurveRequest):
         "message": "Fan curve updated successfully",
         "curve": system_state["fan_curve"],
     }
+
+
+# Serve the built React app last so explicit API routes above take precedence.
+if os.path.isdir(STATIC_DIR):
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

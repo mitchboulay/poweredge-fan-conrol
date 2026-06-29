@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dockerignore
+README.md
+
+# Frontend cruft — Docker rebuilds these from package-lock
+frontend/fan-control-dashboard/node_modules
+frontend/fan-control-dashboard/build
+frontend/fan-control-dashboard/.cache
+
+# Backend cruft
+backend/api/.venv
+**/__pycache__
+**/*.pyc
