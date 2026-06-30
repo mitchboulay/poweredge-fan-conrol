@@ -1,0 +1,19 @@
+services:
+  fan-control:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fan-control
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-18098}:8000"
+    environment:
+      IDRAC_ADDRESS: "${IDRAC_ADDRESS:-192.168.1.98}"
+      IDRAC_USER: "${IDRAC_USER:-root}"
+      IDRAC_PASSWORD: "${IDRAC_PASSWORD:-calvin}"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('localhost',8000)); s.close()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
