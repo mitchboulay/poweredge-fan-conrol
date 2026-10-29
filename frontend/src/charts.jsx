@@ -1,5 +1,6 @@
 // Two small SVG charts: the last hour of history, and the draggable fan curve.
 import { useRef, useState } from "react";
+import { toUnit } from "./ui.jsx";
 
 // Last hour: hottest CPU (sky) and average fan RPM (slate), each on its own scale.
 export function History({ points }) {
@@ -34,7 +35,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // Drag points to shape the curve. Each point stays between its neighbours:
 // temperatures strictly increase, speeds never drop.
-export function CurveChart({ curve, onChange, hottest, target, failsafe }) {
+export function CurveChart({ curve, onChange, hottest, target, failsafe, unit }) {
   const svg = useRef(null);
   const [drag, setDrag] = useState(null);
 
@@ -64,8 +65,8 @@ export function CurveChart({ curve, onChange, hottest, target, failsafe }) {
           <text x={PAD.l - 6} y={y(p) + 3} textAnchor="end" className="fill-slate-400 text-[9px]">{p}%</text>
         </g>
       ))}
-      {[20, 40, 60, 80].map((t) => (
-        <text key={t} x={x(t)} y={H - 8} textAnchor="middle" className="fill-slate-400 text-[9px]">{t}°</text>
+      {(unit === "F" ? [80, 110, 140, 170, 200].map((f) => ((f - 32) * 5) / 9) : [20, 40, 60, 80]).map((t) => (
+        <text key={t} x={x(t)} y={H - 8} textAnchor="middle" className="fill-slate-400 text-[9px]">{toUnit(Math.round(t), unit)}°</text>
       ))}
       <rect x={x(failsafe)} y={PAD.t} width={x(T_MAX) - x(failsafe)} height={H - PAD.t - PAD.b} fill="#fff1f2" />
       <text x={x(failsafe) + 3} y={H - PAD.b - 4} className="fill-rose-400 text-[8px]">Dell</text>
@@ -86,7 +87,7 @@ export function CurveChart({ curve, onChange, hottest, target, failsafe }) {
           <circle cx={x(c.temp_c)} cy={y(c.percent)} r={drag === i ? 7 : 5.5} fill="white" stroke="#0284c7" strokeWidth="2.5" />
           {drag === i && (
             <text x={x(c.temp_c)} y={y(c.percent) - 12} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
-              {c.temp_c}° · {c.percent}%
+              {toUnit(c.temp_c, unit)}° · {c.percent}%
             </text>
           )}
         </g>

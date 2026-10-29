@@ -4,24 +4,29 @@
 temperatures and fans through its iDRAC (`192.168.1.98`, IPMI over LAN) and
 controls the fans in one of three modes:
 
-- **Dell auto**: the iDRAC decides. Safe, loud.
-- **Curve**: the app sets the speed from the hottest CPU, following a curve
-  you drag into shape. It speeds up right away and slows down only after the
-  CPU has been cooler for a minute.
+- **Curve** (the default): the app sets the speed from the hottest CPU,
+  following a curve you drag into shape. It speeds up right away and slows
+  down only after the CPU has been cooler for a minute.
 - **Fixed**: one speed for all six fans.
+- **Dell auto**: the iDRAC decides. Safe, loud.
+
+Temperatures show in °F (switch to °C in the header; the backend and API are °C).
 
 ## Safety
 
-The app hands the fans back to Dell auto when it can't be sure the server is safe:
+Dell takes the fans for as long as the app can't be sure the server is safe,
+then the app takes them back on its own, so a hiccup never leaves it loud:
 
-- a CPU reaches 85 °C (`FAILSAFE_C`),
-- the iDRAC flags any temperature sensor (non-critical or worse),
-- three sensor reads in a row fail,
-- the app shuts down (stop, redeploy or crash with a clean exit).
+| Trigger | Dell has the fans until |
+|---|---|
+| a CPU reaches 85 °C (`FAILSAFE_C`) | the CPUs are below 75 °C (`RESUME_C`) |
+| the iDRAC flags a temperature sensor | the flag clears |
+| three sensor reads in a row fail | a read succeeds |
+| the app stops or redeploys | it starts again |
 
-A failsafe switches the saved mode to Dell auto. The page says why, and you
-take over again by picking a mode. While a fixed speed or a curve is active, the
-speed is re-sent every minute in case the iDRAC reset itself.
+Your chosen mode is never changed by a failsafe; the page shows an amber note
+while one is active. While a fixed speed or a curve is active, the speed is
+re-sent every minute in case the iDRAC reset itself.
 
 The curve only sees the CPUs, inlet and exhaust: drives and PCIe cards have no
 IPMI sensor here, so don't set the floor too low if you add hot cards.

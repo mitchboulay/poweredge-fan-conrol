@@ -1,8 +1,9 @@
 """Fan control loop: Dell auto, a fixed speed, or a temperature curve.
 
 Every POLL_S it reads the sensors and (in fixed/curve mode) sets the fans. It
-hands control back to Dell whenever it can't be sure the server is safe: a CPU
-at FAILSAFE_C, any sensor the iDRAC flags, or the iDRAC going quiet.
+hands control to Dell while it can't be sure the server is safe (a CPU at
+FAILSAFE_C, any sensor the iDRAC flags, the iDRAC going quiet) and takes it
+back, quietly, once that clears.
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ POLL_S = 10
 REASSERT_S = 60       # re-send manual speed in case the iDRAC reset itself to auto
 DOWN_WINDOW = 6       # curve follows the hottest of the last 6 polls: up fast, down after ~1 min
 FAILSAFE_C = 85       # E5-2600 v3/v4 Tcase is 76-86 °C
+RESUME_C = 75         # after a heat failsafe, Dell keeps the fans until the CPUs are below this
 MAX_FAILURES = 3
 HISTORY_LEN = 360     # 1 h at POLL_S
 
@@ -44,7 +46,7 @@ DEFAULT_CURVE = [CurvePoint(temp_c=t, percent=p) for t, p in ((40, 10), (55, 15)
 
 
 class Settings(BaseModel):
-    mode: Literal["auto", "fixed", "curve"] = "auto"
+    mode: Literal["auto", "fixed", "curve"] = "curve"  # quiet by default
     fixed_percent: int = Field(default=25, ge=5, le=100)
     curve: list[CurvePoint] = Field(default_factory=lambda: list(DEFAULT_CURVE), min_length=2, max_length=8)
 
@@ -87,7 +89,7 @@ class Controller:
         self.applied_at = 0.0
         self.updated_at: float | None = None
         self.error: str | None = None
-        self.failsafe: str | None = None
+        self.failsafe: str | None = None  # set while Dell has the fans on our behalf
         self.failures = 0
         self._lock = asyncio.Lock()
 
@@ -153,10 +155,14 @@ class Controller:
 
             if self.settings.mode != "auto":
                 flagged = [t.name for t in temps if not t.ok]
-                if cpu is not None and cpu >= FAILSAFE_C:
-                    return await self._fail_safe(f"CPU reached {cpu} °C")
+                limit = RESUME_C if self.failsafe else FAILSAFE_C  # hysteresis: no flapping at the line
+                if cpu is not None and cpu >= limit:
+                    return await self._fail_safe(f"CPU at {cpu} °C")
                 if flagged:
                     return await self._fail_safe(f"The iDRAC flagged {', '.join(flagged)}")
+                if self.failsafe:
+                    log.info("Failsafe cleared (%s): resuming %s", self.failsafe, self.settings.mode)
+                    self.failsafe = None
             await self._apply(self._target())
 
     def _target(self) -> int | None:
@@ -180,10 +186,10 @@ class Controller:
         self.applied, self.synced, self.applied_at = target, True, now
 
     async def _fail_safe(self, reason: str) -> None:
-        log.error("Failsafe: %s — handing fans back to Dell", reason)
+        """Dell takes the fans until the next tick finds things safe; the saved mode is kept."""
+        if self.failsafe is None:
+            log.error("Failsafe: %s — handing fans to Dell", reason)
         self.failsafe = reason
-        self.settings = self.settings.model_copy(update={"mode": "auto"})
-        self._save()
         try:
             await self._apply(None)
         except IpmiError as exc:

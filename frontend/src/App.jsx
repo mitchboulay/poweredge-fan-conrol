@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CurveChart, History } from "./charts.jsx";
-import { api, Banner, Card, Segmented, SectionTitle, Spinner, usePolled } from "./ui.jsx";
+import { api, Banner, Card, Segmented, SectionTitle, Spinner, toUnit, usePolled, useUnit } from "./ui.jsx";
 
 const MODES = [
   { key: "auto", label: "Dell auto" },
@@ -14,13 +14,15 @@ function describe(status) {
   const { mode } = status.settings;
   const pct = status.applied_percent;
   if (mode === "auto") return "Dell is controlling the fans";
+  if (status.failsafe) return "Dell has the fans until it's safe again";
   if (pct == null) return "Taking over from Dell…";
   return mode === "curve" ? `Following your curve · ${pct}%` : `Holding ${pct}%`;
 }
 
-function StatusCard({ status, busy }) {
+function StatusCard({ status, busy, unit }) {
   const stale = status.updated_at == null || Date.now() / 1000 - status.updated_at > status.poll_seconds * 4;
-  const dot = status.error || stale ? "bg-rose-500" : status.settings.mode === "auto" ? "bg-slate-400" : "bg-emerald-500";
+  const dot = status.error || stale ? "bg-rose-500" : status.failsafe ? "bg-amber-400"
+    : status.settings.mode === "auto" ? "bg-slate-400" : "bg-emerald-500";
   const avgRpm = status.fans.length ? Math.round(status.fans.reduce((s, f) => s + f.rpm, 0) / status.fans.length) : null;
   return (
     <Card>
@@ -28,7 +30,7 @@ function StatusCard({ status, busy }) {
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Hottest CPU</p>
           <p className="mt-1 text-5xl font-semibold leading-none text-slate-800">
-            {status.hottest_cpu ?? "—"}<span className="text-2xl text-slate-400">°C</span>
+            {status.hottest_cpu != null ? toUnit(status.hottest_cpu, unit) : "—"}<span className="text-2xl text-slate-400">°{unit}</span>
           </p>
         </div>
         <div className="text-right">
@@ -49,7 +51,7 @@ function StatusCard({ status, busy }) {
   );
 }
 
-function CurvePanel({ draft, setDraft, status }) {
+function CurvePanel({ draft, setDraft, status, unit }) {
   const curve = draft.curve;
   const addPoint = () => {
     // Split the widest temperature gap.
@@ -63,16 +65,16 @@ function CurvePanel({ draft, setDraft, status }) {
     <>
       <p className="mb-3 text-sm text-slate-500">
         Drag the points. The fans follow the hottest CPU, speed up right away and slow down after a minute.
-        At {status.failsafe_c}°C Dell takes back over.
+        At {toUnit(status.failsafe_c, unit)}°{unit} Dell steps in until it cools down.
       </p>
-      <CurveChart curve={curve} onChange={(c) => setDraft({ ...draft, curve: c })} failsafe={status.failsafe_c}
+      <CurveChart curve={curve} onChange={(c) => setDraft({ ...draft, curve: c })} failsafe={status.failsafe_c} unit={unit}
         hottest={status.hottest_cpu} target={status.settings.mode === "curve" ? status.applied_percent : null} />
       <div className="mt-3 flex flex-wrap gap-2">
         {curve.map((c, i) => (
           <span key={i} className="flex items-center gap-1 rounded-lg bg-slate-100 py-1 pl-2.5 pr-1 font-mono text-xs text-slate-600">
-            {c.temp_c}° → {c.percent}%
+            {toUnit(c.temp_c, unit)}° → {c.percent}%
             <button onClick={() => setDraft({ ...draft, curve: curve.filter((_, j) => j !== i) })} disabled={curve.length <= 2}
-              aria-label={`Remove ${c.temp_c}° point`} className="rounded px-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:invisible">
+              aria-label={`Remove ${toUnit(c.temp_c, unit)}° point`} className="rounded px-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:invisible">
               ×
             </button>
           </span>
@@ -101,7 +103,7 @@ function FixedPanel({ draft, setDraft }) {
   );
 }
 
-function Sensors({ status }) {
+function Sensors({ status, unit }) {
   return (
     <div className="mt-10 grid gap-6 sm:grid-cols-2">
       <section>
@@ -110,7 +112,7 @@ function Sensors({ status }) {
           {status.temperatures.map((t) => (
             <li key={t.name} className="flex items-center justify-between px-4 py-2.5 text-sm">
               <span className="text-slate-600">{t.name}</span>
-              <span className={"font-mono " + (t.ok ? "text-slate-800" : "font-semibold text-rose-600")}>{t.value}°C</span>
+              <span className={"font-mono " + (t.ok ? "text-slate-800" : "font-semibold text-rose-600")}>{toUnit(t.value, unit)}°{unit}</span>
             </li>
           ))}
         </ul>
@@ -135,6 +137,7 @@ export default function App() {
   const [status, setStatus] = usePolled("/api/status", setError);
   const [draft, setDraft] = useState(null); // unsaved edits to the curve / fixed speed
   const [busy, setBusy] = useState(false);
+  const [unit, setUnit] = useUnit();
 
   const save = async (settings) => {
     setBusy(true); setError(null);
@@ -164,11 +167,15 @@ export default function App() {
     <main className="mx-auto max-w-xl px-4 py-8 sm:py-12">
       <header className="mb-6 flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold text-slate-800">Fans</h1>
-        <span className="text-sm text-slate-400">PowerEdge R730</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-400">PowerEdge R730</span>
+          <Segmented label="Temperature unit" value={unit} onChange={setUnit}
+            options={[{ key: "F", label: "°F" }, { key: "C", label: "°C" }]} />
+        </div>
       </header>
 
-      <StatusCard status={status} busy={busy} />
-      <Banner tone="amber">{status.failsafe && `Dell took the fans back: ${status.failsafe}. Pick a mode to take over again.`}</Banner>
+      <StatusCard status={status} busy={busy} unit={unit} />
+      <Banner tone="amber">{status.failsafe && `Dell has the fans: ${status.failsafe.replace(/(\d+) °C/, (_, c) => `${toUnit(+c, unit)} °${unit}`)}. Your ${status.settings.mode} picks back up on its own once that clears.`}</Banner>
       <Banner>{error}</Banner>
 
       <section className="mt-8">
@@ -178,7 +185,7 @@ export default function App() {
         {editing !== "auto" && (
           <Card className="mt-4">
             {editing === "curve"
-              ? <CurvePanel draft={current} setDraft={setDraft} status={status} />
+              ? <CurvePanel draft={current} setDraft={setDraft} status={status} unit={unit} />
               : <FixedPanel draft={current} setDraft={setDraft} />}
             {dirty && (
               <div className="mt-5 flex justify-end gap-2">
@@ -194,12 +201,12 @@ export default function App() {
         )}
         {editing === "auto" && (
           <p className="mt-3 px-1 text-sm text-slate-500">
-            The iDRAC picks the speed. It plays it safe and runs loud; a curve is usually much quieter.
+            The iDRAC picks the speed. It plays it safe and runs loud; the curve is much quieter.
           </p>
         )}
       </section>
 
-      <Sensors status={status} />
+      <Sensors status={status} unit={unit} />
     </main>
   );
 }

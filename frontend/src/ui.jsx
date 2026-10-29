@@ -63,6 +63,20 @@ export function Segmented({ options, value, busy, onChange, label }) {
   );
 }
 
+// The backend speaks °C; the page shows °F unless switched (remembered per browser).
+export const toUnit = (c, unit) => (unit === "F" ? Math.round((c * 9) / 5 + 32) : c);
+
+export function useUnit() {
+  const [unit, setUnit] = useState(() => {
+    try { return localStorage.getItem("unit") || "F"; } catch { return "F"; }
+  });
+  const choose = (u) => {
+    setUnit(u);
+    try { localStorage.setItem("unit", u); } catch { /* private mode: not remembered */ }
+  };
+  return [unit, choose];
+}
+
 // Polls `path` every `ms`; returns [data, setData].
 export function usePolled(path, onError, ms = 5000) {
   const [data, setData] = useState(null);

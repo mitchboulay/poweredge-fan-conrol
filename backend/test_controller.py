@@ -78,18 +78,24 @@ def test_curve_mode_sets_speed_and_ramps_down_slowly():
     assert ctl.applied == 45
 
 
-def test_hot_cpu_hands_back_to_dell():
+def test_hot_cpu_hands_to_dell_until_it_cools():
     fake = FakeIpmi(cpu=c.FAILSAFE_C)
     ctl = make(fake, mode="fixed", fixed_percent=20)
     asyncio.run(ctl.tick())
-    assert fake.calls == ["auto"] and ctl.settings.mode == "auto" and ctl.failsafe
+    assert fake.calls == ["auto"] and ctl.failsafe and ctl.settings.mode == "fixed"
+    fake.cpu = c.RESUME_C  # cooler, but not cool enough yet
+    asyncio.run(ctl.tick())
+    assert fake.calls == ["auto"] and ctl.failsafe
+    fake.cpu = c.RESUME_C - 1
+    asyncio.run(ctl.tick())
+    assert fake.calls == ["auto", 20] and ctl.failsafe is None
 
 
 def test_flagged_sensor_hands_back_to_dell():
     fake = FakeIpmi(flag=True)
     ctl = make(fake, mode="fixed", fixed_percent=20)
     asyncio.run(ctl.tick())
-    assert ctl.settings.mode == "auto" and "Exhaust Temp" in ctl.failsafe
+    assert fake.calls == ["auto"] and "Exhaust Temp" in ctl.failsafe
 
 
 def test_lost_idrac_hands_back_to_dell_after_retries():
@@ -99,7 +105,14 @@ def test_lost_idrac_hands_back_to_dell_after_retries():
     fake.fail = True
     for _ in range(c.MAX_FAILURES):
         asyncio.run(ctl.tick())
-    assert fake.calls == [20, "auto"] and ctl.settings.mode == "auto"
+    assert fake.calls == [20, "auto"] and ctl.failsafe
+    fake.fail = False
+    asyncio.run(ctl.tick())
+    assert fake.calls == [20, "auto", 20] and ctl.failsafe is None
+
+
+def test_quiet_curve_is_the_default():
+    assert c.Settings().mode == "curve"
 
 
 def test_settings_survive_restart():
