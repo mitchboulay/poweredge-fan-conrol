@@ -6,9 +6,12 @@ import { toUnit } from "./ui.jsx";
 export function History({ points }) {
   const rows = points.filter((p) => p.cpu != null);
   if (rows.length < 2) return null;
+  // Minimum spans keep a 1 °C / 120 RPM wobble from filling the whole chart.
+  const MIN_SPAN = { cpu: 10, rpm: 2000 };
   const line = (key) => {
     const vals = rows.map((p) => p[key]).filter((v) => v != null);
-    const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = Math.max(max - min, MIN_SPAN[key]), lo = (min + max) / 2 - span / 2;
     return rows.map((p, i) => `${(i / (rows.length - 1)) * 100},${p[key] == null ? 50 : 36 - ((p[key] - lo) / span) * 32}`).join(" ");
   };
   const minutes = Math.round((rows.at(-1).t - rows[0].t) / 60);
@@ -65,8 +68,9 @@ export function CurveChart({ curve, onChange, hottest, target, failsafe, unit })
           <text x={PAD.l - 6} y={y(p) + 3} textAnchor="end" className="fill-slate-400 text-[9px]">{p}%</text>
         </g>
       ))}
-      {(unit === "F" ? [80, 110, 140, 170, 200].map((f) => ((f - 32) * 5) / 9) : [20, 40, 60, 80]).map((t) => (
-        <text key={t} x={x(t)} y={H - 8} textAnchor="middle" className="fill-slate-400 text-[9px]">{toUnit(Math.round(t), unit)}°</text>
+      {(unit === "F" ? [80, 110, 140, 170, 200] : [20, 40, 60, 80]).map((label) => (
+        <text key={label} x={x(unit === "F" ? ((label - 32) * 5) / 9 : label)} y={H - 8} textAnchor="middle"
+          className="fill-slate-400 text-[9px]">{label}°</text>
       ))}
       <rect x={x(failsafe)} y={PAD.t} width={x(T_MAX) - x(failsafe)} height={H - PAD.t - PAD.b} fill="#fff1f2" />
       <text x={x(failsafe) + 3} y={H - PAD.b - 4} className="fill-rose-400 text-[8px]">Dell</text>
