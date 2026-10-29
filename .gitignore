@@ -1,5 +1,3 @@
-
-/backend/api/.venv
-*.pyc
+backend/.venv
 **/__pycache__/
-
+*.pyc

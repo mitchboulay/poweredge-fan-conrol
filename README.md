@@ -1,102 +1,71 @@
-# poweredge-fan-conrol
-A FastAPI and React-based web interface for dynamically controlling and monitoring server fan speeds and temperatures. Designed for Dell PowerEdge homelab servers, this application uses IPMI commands to provide real-time insights and allow user-defined fan curves or manual fan speed adjustments.
+# Fans — PowerEdge R730 fan control
 
-# Fan Control WebUI for Dell PowerEdge Servers
+`https://fans.home.mbotech.net` (LAN only, no auth). Watches the R730's
+temperatures and fans through its iDRAC (`192.168.1.98`, IPMI over LAN) and
+controls the fans in one of three modes:
 
-A web interface to monitor and control server fan speeds, designed specifically for homelab enthusiasts running Dell PowerEdge servers. This project utilizes **FastAPI** for the backend and **React** for the frontend to provide a modern, user-friendly solution for server management.
+- **Dell auto**: the iDRAC decides. Safe, loud.
+- **Curve**: the app sets the speed from the hottest CPU, following a curve
+  you drag into shape. It speeds up right away and slows down only after the
+  CPU has been cooler for a minute.
+- **Fixed**: one speed for all six fans.
 
-## Features
-- **Dashboard**: Real-time temperature and fan speed monitoring.
-- **Manual Fan Control**: Set fan speeds directly via sliders or input fields.
-- **Custom Fan Curves**: Define temperature-to-fan-speed mappings for dynamic cooling.
-- **IPMI Integration**: Leverages IPMI commands for communication with the server.
-- **Authentication**: Basic authentication for secure access (optional).
-- **Simple Deployment**: Easily run using Docker or standalone services.
+## Safety
 
-## Tech Stack
-- **Backend**: [FastAPI](https://fastapi.tiangolo.com/)
-- **Frontend**: [React](https://reactjs.org/)
-- **Communication**: IPMI tools (`ipmitool`)
+The app hands the fans back to Dell auto when it can't be sure the server is safe:
 
-## Installation
+- a CPU reaches 85 °C (`FAILSAFE_C`),
+- the iDRAC flags any temperature sensor (non-critical or worse),
+- three sensor reads in a row fail,
+- the app shuts down (stop, redeploy or crash with a clean exit).
 
-### Prerequisites
-- A Dell PowerEdge server with IPMI access enabled (e.g., iDRAC).
-- Python 3.8+ installed.
-- Node.js (for running the React app).
-- `ipmitool` installed on the server where the backend will run.
+A failsafe switches the saved mode to Dell auto. The page says why, and you
+take over again by picking a mode. While a fixed speed or a curve is active, the
+speed is re-sent every minute in case the iDRAC reset itself.
 
-### Backend Setup
+The curve only sees the CPUs, inlet and exhaust: drives and PCIe cards have no
+IPMI sensor here, so don't set the floor too low if you add hot cards.
 
-1.  Clone the repository:
-    `git clone https://github.com/your-username/fan-control-webui.git
-    cd fan-control-webui/backend` 
-    
-2.  Install dependencies:
-    
-    `pip install -r requirements.txt` 
-    
-3.  Start the FastAPI server: 
-    `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
-### Frontend Setup
+## How it talks to the iDRAC
 
-1.  Navigate to the `frontend` folder:
-    `cd ../frontend` 
-    
-2.  Install dependencies:
-    `npm install` 
-    
-3.  Start the development server:
-    `npm start` 
-    
-    The app will be available at `http://localhost:3000`.
+`ipmitool -I lanplus` with the password passed in the environment (`-E`), one
+call at a time. Readings come from `sdr type temperature` and `sdr type fan`.
+Control uses Dell's OEM raw commands, which work on iDRAC7/8 (this one runs
+2.86) but were removed in iDRAC9 3.30+:
 
-### Deployment
+| | |
+|---|---|
+| Dell auto | `raw 0x30 0x30 0x01 0x01` |
+| Manual | `raw 0x30 0x30 0x01 0x00` |
+| Set all fans to N % | `raw 0x30 0x30 0x02 0xff 0x<N hex>` |
 
--   Use Docker to containerize the app or serve the React frontend statically using FastAPI's `StaticFiles`.
--   For production, bundle the React app (`npm run build`) and serve it alongside the FastAPI backend.
+The iDRAC can't report which mode it's in, so the app tracks that itself.
 
-## API Endpoints
+The iDRAC uses its **dedicated** port. If the page says it can't reach the
+iDRAC, check that port has link: `ipmitool delloem lan get active` on the
+Proxmox host prints `None` when it doesn't.
 
-### `/status`
+## Run / deploy
 
--   **GET**: Fetch real-time temperature and fan speed data.
+Coolify app `fan-control` on CT 124 builds `main` on every push (Forgejo
+webhook) and publishes host port 18098; Caddy proxies `fans.home.mbotech.net`
+to it. Env vars `IDRAC_ADDRESS`, `IDRAC_USER` and `IDRAC_PASSWORD` are set in
+Coolify. Mode and curve persist in the `fan-control-data` volume.
 
-### `/fan/speed`
+Locally:
 
--   **POST**: Set manual fan speed.
-    
-    #### Request Body Example:
-    ```{
-      "speed": 50,
-      "fan_id": 0
-    }```
+```bash
+cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
+.venv/bin/python -m pytest -q
+IDRAC_PASSWORD=... STATE_PATH=/tmp/fans.json .venv/bin/uvicorn app:app --port 8000
+cd ../frontend && npm install && npm run dev    # proxies /api to :8000
+```
 
-### `/fan/curve`
+Running it locally controls the real server, just like production. Don't run
+both at once: two controllers would fight over the fans.
 
--   **POST**: Update the fan curve for dynamic control.
-    
-    #### Request Body Example:
-    ```[
-  { "temperature": 30, "speed": 10 },
-  { "temperature": 40, "speed": 20 }
-]```
+## API
 
-## Security
-
--   **Credentials**: Avoid storing plain-text credentials in the script. Use environment variables or a secrets manager.
--   **Authentication**: Add token-based authentication or API keys for secure access.
-
-## Contribution
-
-Contributions, bug reports, and feature requests are welcome!  
-Feel free to open an issue or submit a pull request.
-
-----------
-
-## License
-
-This project is licensed under the MIT License.  
-See the LICENSE file for details.
-
-Let me know if you'd like to make any changes to this!
+- `GET /api/status`: settings, applied speed, sensors, last hour of history
+- `PUT /api/settings`: `{mode: "auto"|"fixed"|"curve", fixed_percent, curve: [{temp_c, percent}]}`
+- `GET /healthz`
