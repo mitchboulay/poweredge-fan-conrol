@@ -73,4 +73,21 @@ both at once: two controllers would fight over the fans.
 
 - `GET /api/status`: settings, applied speed, sensors, last hour of history
 - `PUT /api/settings`: `{mode: "auto"|"fixed"|"curve", fixed_percent, curve: [{temp_c, percent}]}`
+- `GET /api/metrics`: flat numbers for Telegraf (`applied_percent` is -1 while Dell has the fans)
 - `GET /healthz`
+
+## MCP
+
+Streamable HTTP at `https://fans.home.mbotech.net/mcp/` (trailing slash; LAN only,
+no auth). Tools: `get_status`, `get_history`, `set_mode`, `set_fixed_speed`, `set_curve`.
+
+```bash
+claude mcp add --scope user --transport http fans https://fans.home.mbotech.net/mcp/
+```
+
+## Grafana
+
+Host Telegraf on Proxmox reads the iDRAC's sensors directly (`ipmi_sensor`) and
+this app's `/api/metrics` (`fan_control`); both land on the **Hardware**
+dashboard, and alert `hl-fan-failsafe` emails when Dell has held the fans for
+15 min. Config lives in the homelab repo (`observability/`, `grafana/`).
